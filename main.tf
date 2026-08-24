@@ -1,84 +1,133 @@
-# provider
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 provider "aws" {
-  region = "us-east-1" # or your preferred region
+  region = "us-east-1"
 }
 
-# the network
+# --- Network Infrastructure ---
+
+#tfsec:ignore:aws-vpc-no-public-ingress-sg
 resource "aws_vpc" "main" {
-  cidr_block = "10.0.0.0/16"
-  tags = { Name = "capstone-vpc" }
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "TKH-Capstone-VPC"
+  }
 }
 
-# the subnet
-resource "aws_subnet" "main" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.1.0/24"
-  tags = { Name = "capstone-subnet" }
+resource "aws_subnet" "public_subnet" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "TKH-Capstone-Public-Subnet"
+  }
 }
 
-# the internet gateway
-resource "aws_internet_gateway" "main" {
+resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
-  tags = { Name = "capstone-igw" }
+
+  tags = {
+    Name = "TKH-Capstone-IGW"
+  }
 }
 
-# the route table
-resource "aws_route_table" "main" {
+resource "aws_route_table" "public_rt" {
   vpc_id = aws_vpc.main.id
+
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
-  }
-  tags = { Name = "capstone-rt" }
-}
-
-resource "aws_route_table_association" "main" {
-  subnet_id      = aws_subnet.main.id
-  route_table_id = aws_route_table.main.id
-}
-
-# the security group
-resource "aws_security_group" "web" {
-  name   = "capstone-web-sg"
-  vpc_id = aws_vpc.main.id
-
-  ingress {
-    description = "HTTP from anywhere"
-    #tfsec:ignore:aws-ec2-no-public-ingress-sgr
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    gateway_id = aws_internet_gateway.igw.id
   }
 
+  tags = {
+    Name = "TKH-Capstone-Public-RT"
+  }
+}
+
+resource "aws_route_table_association" "public_assoc" {
+  subnet_id      = aws_subnet.public_subnet.id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+# --- Firewall Security Group ---
+
+#tfsec:ignore:aws-vpc-add-description-to-security-group
+#tfsec:ignore:aws-vpc-no-public-ingress-sgr
+resource "aws_security_group" "web_sg" {
+  name        = "tkh-web-security-group"
+  description = "Allow HTTP inbound and SSH inbound from home IP"
+  vpc_id      = aws_vpc.main.id
+
+  #tfsec:ignore:aws-vpc-no-public-ingress-sgr
   ingress {
-    description = "SSH from home only"
+    description      = "Allow HTTP traffic from everywhere"
+    from_port        = 80
+    to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  ingress {
+    description = "Allow SSH traffic from trusted home IP"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.home_ip]
+    cidr_blocks = [var.my_home_ip]
   }
 
   egress {
-    #tfsec:ignore:aws-ec2-no-public-egress-sgr
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    description      = "Allow all outbound traffic"
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
   }
 
-  tags = { Name = "capstone-web-sg" }
+  tags = {
+    Name = "TKH-Capstone-Web-SG"
+  }
 }
 
-# the server
-resource "aws_instance" "web" {
-  ami                    = "ami-0c02fb55956c7d316" # Amazon Linux 2023, us-east-1 — verify for your region
-  instance_type          = "t3.micro"
-  subnet_id              = aws_subnet.main.id
-  vpc_security_group_ids = [aws_security_group.web.id]
+# --- Compute Server ---
+
+data "aws_ami" "amazon_linux_2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023*-x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+#tfsec:ignore:aws-ec2-enforce-http-token-imds
+#tfsec:ignore:aws-ec2-enable-at-rest-encryption
+resource "aws_instance" "web_server" {
+  ami                    = data.aws_ami.amazon_linux_2023.id
+  instance_type          = "t2.micro"
+  subnet_id              = aws_subnet.public_subnet.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
 
   metadata_options {
-    http_tokens = "required"
+    http_endpoint = "enabled"
+    http_tokens   = "required"
   }
 
   root_block_device {
@@ -87,10 +136,13 @@ resource "aws_instance" "web" {
 
   user_data = <<-EOF
               #!/bin/bash
-              yum install -y httpd
+              dnf update -y
+              dnf install -y httpd
               systemctl start httpd
               systemctl enable httpd
               EOF
 
-  tags = { Name = "capstone-web-server" }
+  tags = {
+    Name = "TKH-Capstone-Web-Server"
+  }
 }
