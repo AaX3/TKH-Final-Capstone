@@ -14,5 +14,4 @@ jobs:
       - name: Run tfsec
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
-          tfsec_args: --soft-fail=false
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          soft_fail: false
