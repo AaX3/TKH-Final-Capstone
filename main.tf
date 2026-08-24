@@ -79,7 +79,7 @@ resource "aws_security_group" "web" {
 
 resource "aws_instance" "web" {
   ami                    = "ami-0c02fb55956c7d316" # Amazon Linux 2023, us-east-1 — verify for your region
-  instance_type          = "t3.micro"
+  instance_type          = "t2.micro"
   subnet_id              = aws_subnet.main.id
   vpc_security_group_ids = [aws_security_group.web.id]
 
