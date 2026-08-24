@@ -13,7 +13,6 @@ provider "aws" {
 
 # --- Network Infrastructure ---
 
-#tfsec:ignore:aws-vpc-no-public-ingress-sg
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
@@ -61,43 +60,45 @@ resource "aws_route_table_association" "public_assoc" {
 
 # --- Firewall Security Group ---
 
-#tfsec:ignore:aws-vpc-add-description-to-security-group
-#tfsec:ignore:aws-vpc-no-public-ingress-sgr
 resource "aws_security_group" "web_sg" {
   name        = "tkh-web-security-group"
   description = "Allow HTTP inbound and SSH inbound from home IP"
   vpc_id      = aws_vpc.main.id
 
-  #tfsec:ignore:aws-vpc-no-public-ingress-sgr
-  ingress {
-    description      = "Allow HTTP traffic from everywhere"
-    from_port        = 80
-    to_port          = 80
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
-    ipv6_cidr_blocks = ["::/0"]
-  }
-
-  ingress {
-    description = "Allow SSH traffic from trusted home IP"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.my_home_ip]
-  }
-
-  egress {
-    description      = "Allow all outbound traffic"
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
-    ipv6_cidr_blocks = ["::/0"]
-  }
-
   tags = {
     Name = "TKH-Capstone-Web-SG"
   }
+}
+
+# Explicit Security Group Rules with Descriptions
+resource "aws_security_group_rule" "allow_http" {
+  type              = "ingress"
+  description       = "Allow HTTP traffic from everywhere"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.web_sg.id
+}
+
+resource "aws_security_group_rule" "allow_ssh" {
+  type              = "ingress"
+  description       = "Allow SSH traffic from trusted home IP"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_home_ip]
+  security_group_id = aws_security_group.web_sg.id
+}
+
+resource "aws_security_group_rule" "allow_outbound" {
+  type              = "egress"
+  description       = "Allow all outbound traffic"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.web_sg.id
 }
 
 # --- Compute Server ---
@@ -117,19 +118,19 @@ data "aws_ami" "amazon_linux_2023" {
   }
 }
 
-#tfsec:ignore:aws-ec2-enforce-http-token-imds
-#tfsec:ignore:aws-ec2-enable-at-rest-encryption
 resource "aws_instance" "web_server" {
   ami                    = data.aws_ami.amazon_linux_2023.id
   instance_type          = "t2.micro"
   subnet_id              = aws_subnet.public_subnet.id
   vpc_security_group_ids = [aws_security_group.web_sg.id]
 
+  # Enforce IMDSv2 for security compliance
   metadata_options {
     http_endpoint = "enabled"
     http_tokens   = "required"
   }
 
+  # Encrypt root block device
   root_block_device {
     encrypted = true
   }
