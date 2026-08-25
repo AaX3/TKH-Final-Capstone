@@ -22,3 +22,5 @@ The EC2 instance (`t2.micro`) includes several additional security measures beyo
 Setup is fully automated: when the instance first boots, a `user_data` startup script installs and starts the Apache web server (`httpd`) on its own — no manual login or configuration is needed after running `terraform apply`.
 
 Before any changes can be deployed, a GitHub Actions pipeline (`security-scan.yml`) automatically scans the Terraform code with `tfsec` every time it's pushed to the `main` branch. With `soft_fail: false`, if the scanner finds a problem, the pipeline fails outright rather than just warning about it — so insecure code can't move forward until it's actually fixed.
+
+Link to Presentation: https://drive.google.com/drive/u/0/folders/1I9uonlMbsF9lXESaC4Ke-_RpB3XsH4g- 
