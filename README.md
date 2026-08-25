@@ -4,7 +4,7 @@
 This project provisions a secure, automated web server infrastructure on AWS using Terraform. It builds a custom VPC with public networking, deploys a hardened EC2 instance running Apache via an automated bootstrap script, and enforces security compliance through a CI/CD pipeline that statically scans all infrastructure code for misconfigurations before deployment.
 
 ## Technologies Used
-- AWS (VPC, EC2, Security Groups, IAM)
+- AWS (VPC, EC2, EBS, Security Groups, IAM)
 - Terraform
 - GitHub Actions
 - tfsec
